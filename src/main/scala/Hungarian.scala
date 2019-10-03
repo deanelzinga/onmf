@@ -59,11 +59,7 @@ class Hungarian(cost: DenseMatrix[Double]) {
   // - Add this entry to each MARKED job. Return to STEP 3.
 
   // STEP 6: Read off an available assignment from the covered 0s (not completely trivial).
-  var workerZeroJobs: DenseVector[immutable.BitSet] = DenseVector(immutable.BitSet.empty)
-
-  var jobZeroWorkers: DenseVector[immutable.BitSet] = DenseVector(immutable.BitSet.empty)
-  var jobUnmarked: immutable.BitSet = immutable.BitSet.empty
-  var workerUnmarked: immutable.BitSet = immutable.BitSet.empty
+  //case class State(costx: DenseMatrix[Double], )
   case class Mark(worker: Boolean, index: Int)
   def getMark(workerUnmarked: immutable.BitSet,
               workerZeroJobs: DenseVector[immutable.BitSet],
@@ -82,13 +78,13 @@ class Hungarian(cost: DenseMatrix[Double]) {
       Some(Mark(worker = false, bestJobMark))
   }
   // For each worker (::), over all jobs (*), map out set of indices where cost is zero:
-  workerZeroJobs = costx(::, *).map(jobCost => where(jobCost :== 0.0)).
+  var workerZeroJobs: DenseVector[immutable.BitSet] = costx(::, *).map(jobCost => where(jobCost :== 0.0)).
     t.map(immutable.BitSet(_: _*))
   // For each job (::), over all workers (*),
-  jobZeroWorkers = costx(*, ::).map(workerCost => where(workerCost :== 0.0)).
+  var jobZeroWorkers: DenseVector[immutable.BitSet] = costx(*, ::).map(workerCost => where(workerCost :== 0.0)).
     map(immutable.BitSet(_: _*))
-  jobUnmarked = immutable.BitSet((0 until numJobs): _*)
-  workerUnmarked = immutable.BitSet((0 until numWorkers): _*)
+  var jobUnmarked: immutable.BitSet = immutable.BitSet((0 until numJobs): _*)
+  var workerUnmarked: immutable.BitSet = immutable.BitSet((0 until numWorkers): _*)
   var mark: Option[Mark] = getMark(workerUnmarked, workerZeroJobs, jobUnmarked, jobZeroWorkers)
   while (mark.nonEmpty) {
     if (mark.get.worker) {
