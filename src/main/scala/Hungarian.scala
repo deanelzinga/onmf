@@ -1,11 +1,6 @@
 import breeze.linalg._
 
-import scala.collection.{SortedSet, mutable}
-
-//import scala.collection.mutable
 import scala.collection.immutable
-import org.roaringbitmap.RoaringBitmap
-import scala.collection.mutable.BitSet
 
 class Hungarian(cost: DenseMatrix[Double]) {
   // Kuhn-Munkres typically stated with workers in rows and jobs in columns. Consider
@@ -18,29 +13,103 @@ class Hungarian(cost: DenseMatrix[Double]) {
   // - We subtract each worker's minimum job-cost from all the job costs for that worker.
   // - We subtract each job's minimum worker cost from all the worker costs for that job.
 
-  protected var costx: DenseMatrix[Double] =
+  protected var costT: DenseMatrix[Double] =
     if (cost.rows <= cost.cols)
       cost.toDenseMatrix
     else
       cost.t.toDenseMatrix
-  protected var numWorkers: Int = costx.rows
-  protected var numJobs: Int = costx.cols
+  // protected var numWorkers: Int = costT.rows
+  // protected var numJobs: Int = costT.cols
 
-  // STEP 1. For each worker, subtract the min job cost from all the job costs for that worker.
-  // For each worker, subtract their min job cost from all their job costs:
-  private val minJobCostPerWorker = min(costx(::, *)).t
-  costx(*, ::) :-= minJobCostPerWorker
 
-  // STEP 2. For each job, subtract the min worker cost from all the worker costs for that job.
-  // (Note, for jobs with a worker cost set to 0 in Step 1, subtracting 0 obviously has no effect.)
-  // For each job, subtract its min worker costs from all their worker costs:
-  private val minWorkerCostPerJob = min(costx(*, ::))
-  costx(::, *) :-= minWorkerCostPerJob
+  def reduceRowsCols(costT: DenseMatrix[Double]): DenseMatrix[Double] = {
+    // Copy reoriented cost table
+    val costX = costT.copy
+    // STEP 1. For each worker, SUBTRACT the min job cost from all the job costs for that worker.
+    // For each worker, subtract their min job cost from all their job costs:
+    val workerMinJobCost = min(costX(::, *)).t
+    costX(*, ::) :-= workerMinJobCost
+
+    // STEP 2. For each job, SUBTRACT the min worker cost from all the worker costs for that job.
+    // (Note, for jobs with a worker cost set to 0 in Step 1, subtracting 0 obviously has no effect.)
+    // For each job, subtract its min worker costs from all their worker costs:
+    val jobMinWorkerCost = min(costX(*, ::))
+    costX(::, *) :-= jobMinWorkerCost
+    costX
+  }
+
+  case class Mark(worker: Boolean, index: Int)
+  case class State(costX: DenseMatrix[Double],
+                  // Default parameter values cover initialization
+                   workerUnmarked: immutable.BitSet = immutable.BitSet(0 until costX.rows: _*),
+                   jobUnmarked: immutable.BitSet = immutable.BitSet(0 until costX.cols: _*),
+                   workerZeroJobs: DenseVector[immutable.BitSet] =
+                     costX(*, ::).map(c => where(c :== 0.0)).
+                       map(immutable.BitSet(_ : _*)),
+                   jobZeroWorkers: DenseVector[immutable.BitSet] =
+                     costX(::, *).map(c => where(c :== 0.0)).t.
+                       map(immutable.BitSet(_ : _*))
+                  ) {
+    def getMark: Option[Mark] = {
+      val bestWorkerMark: Int = workerUnmarked.maxBy(workerZeroJobs(_).size)
+      val bestJobMark: Int = jobUnmarked.maxBy(jobZeroWorkers(_).size)
+      val bestWorkerZeros = workerZeroJobs(bestWorkerMark).size
+      val bestJobZeros = jobZeroWorkers(bestJobMark).size
+      if (bestWorkerZeros == 0 && bestJobZeros == 0)
+        None
+      else if (bestJobZeros <= bestWorkerZeros)
+        Some(Mark(worker = true, bestWorkerMark))
+      else
+        Some(Mark(worker = false, bestJobMark))
+    }
+
+    def markZeroIfAny(markMaybe : Option[Mark]): State = {
+      markMaybe match {
+        case None => this
+        case Some(Mark(worker == true, bestWorkerMark)) => copy(
+          costX = costX,
+          workerUnmarked - bestWorkerMark,
+          jobUnmarked,
+          workerZeroJobs,
+          jobZeroWorkers.map(_ - bestWorkerMark))
+        case Some(Mark(worker == false, bestJobMark)) => copy(
+          costX,
+          workerUnmarked,
+          jobUnmarked - bestJobMark,
+          workerZeroJobs.map(_ - bestJobMark),
+          jobZeroWorkers
+        )
+      }
+    }
+    def markAllZeros: State = {
+      var state = copy()
+      var markMaybe = getMark
+      while (markMaybe.nonEmpty) {
+        state = state.markZeroIfAny(markMaybe)
+        markMaybe = state.getMark
+      }
+      state
+    }
+
+    def numWorkers: Int = costX.rows
+    def numJobs: Int = costX.cols
+
+    /** number of workers > Number of marks */
+    def solved: Boolean = {
+      numWorkers == (numWorkers - workerUnmarked.size) + (numJobs - jobUnmarked.size)
+    }
+    def reduceByMinUnmarked: State = {
+      val minUnmarked = min(costX(workerUnmarked.toSeq, jobUnmarked.toSeq))
+      // Subtract min unmarked cost from every unmarked worker;
+      costX(workerUnmarked.toSeq, ::) :-= minUnmarked
+      costX(::, 0 until numJobs filterNot(jobUnmarked(_))) :+= minUnmarked
+      State(costX)  // Reset all marks.
+    }
+  }
 
   // STEP 3. Starting from an unmarked, transformed cost matrix...
   // - Mark all the 0s of the transformed cost matrix with a minimum number of marks on
   // workers or jobs (rows or columns).
-
   // Find and make next mark, if any:
   // At each step, we use a greedy algorithm:
   // - Find the max count of unmarked, 0-cost jobs for any unmarked worker.
@@ -59,52 +128,16 @@ class Hungarian(cost: DenseMatrix[Double]) {
   // - Add this entry to each MARKED job. Return to STEP 3.
 
   // STEP 6: Read off an available assignment from the covered 0s (not completely trivial).
-  //case class State(costx: DenseMatrix[Double], )
-  case class Mark(worker: Boolean, index: Int)
-  def getMark(workerUnmarked: immutable.BitSet,
-              workerZeroJobs: DenseVector[immutable.BitSet],
-              jobUnmarked: immutable.BitSet,
-              jobZeroWorkers: DenseVector[immutable.BitSet]
-               ): Option[Mark] = {
-    var bestWorkerMark: Int = workerUnmarked.maxBy(workerZeroJobs(_).size)
-    var bestJobMark: Int = jobUnmarked.maxBy(jobZeroWorkers(_).size)
-    var bestWorkerZeros = workerZeroJobs(bestWorkerMark).size
-    var bestJobZeros = jobZeroWorkers(bestJobMark).size
-    if (bestWorkerZeros == 0 && bestJobZeros == 0)
-      None
-    else if (bestJobZeros <= bestWorkerZeros)
-      Some(Mark(worker = true, bestWorkerMark))
-    else
-      Some(Mark(worker = false, bestJobMark))
+
+  protected var costX: DenseMatrix[Double] = reduceRowsCols(costT)
+  var state: State = State(costX)
+  state = state.markAllZeros
+  while (!state.solved) {
+    state.reduceByMinUnmarked
+    state = state.markAllZeros
   }
-  // For each worker (::), over all jobs (*), map out set of indices where cost is zero:
-  var workerZeroJobs: DenseVector[immutable.BitSet] = costx(::, *).map(jobCost => where(jobCost :== 0.0)).
-    t.map(immutable.BitSet(_: _*))
-  // For each job (::), over all workers (*),
-  var jobZeroWorkers: DenseVector[immutable.BitSet] = costx(*, ::).map(workerCost => where(workerCost :== 0.0)).
-    map(immutable.BitSet(_: _*))
-  var jobUnmarked: immutable.BitSet = immutable.BitSet((0 until numJobs): _*)
-  var workerUnmarked: immutable.BitSet = immutable.BitSet((0 until numWorkers): _*)
-  var mark: Option[Mark] = getMark(workerUnmarked, workerZeroJobs, jobUnmarked, jobZeroWorkers)
-  while (mark.nonEmpty) {
-    if (mark.get.worker) {
-      workerUnmarked = workerUnmarked - mark.get.index
-      jobZeroWorkers = jobZeroWorkers.map(_ - mark.get.index)
-    } else {
-      jobUnmarked = jobUnmarked - mark.get.index
-      workerZeroJobs = workerZeroJobs.map(_ - mark.get.index)
-    }
-    mark = getMark(workerUnmarked, workerZeroJobs, jobUnmarked, jobZeroWorkers)
-  }
-  while ((numWorkers - workerUnmarked.size) + (numJobs - jobUnmarked.size) < numWorkers) {
-    val cross = workerUnmarked.flatMap(w => jobUnmarked.map(j => (w, j)))
-    val wjMin = cross.minBy(wj => costx(wj._1, wj._2))
-    val minUnmarkedCost = costx(wjMin._1, wjMin._2)
-    // Subtract min unmarked cost from every unmarked worker;
-    costx(workerUnmarked.toSeq, ::) :-= minUnmarkedCost
-    costx(::, 0 until numJobs filterNot(jobUnmarked(_))) :+= minUnmarkedCost
-    // FIXME: Add steps: clear marks, redo marks.
-  }
+
+  // Fixme: Write code to read out solution, now that we have "minimum number of lines" = N.
 }
 
 object Hungarian {
