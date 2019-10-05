@@ -21,7 +21,6 @@ class Hungarian(cost: DenseMatrix[Double]) {
   // protected var numWorkers: Int = costT.rows
   // protected var numJobs: Int = costT.cols
 
-
   def reduceRowsCols(costT: DenseMatrix[Double]): DenseMatrix[Double] = {
     // Copy reoriented cost table
     val costX = costT.copy
@@ -50,6 +49,10 @@ class Hungarian(cost: DenseMatrix[Double]) {
                      costX(::, *).map(c => where(c :== 0.0)).t.
                        map(immutable.BitSet(_ : _*))
                   ) {
+    override def toString: String = {
+
+      ""
+    }
     def getMark: Option[Mark] = {
       val bestWorkerMark: Int = workerUnmarked.maxBy(workerZeroJobs(_).size)
       val bestJobMark: Int = jobUnmarked.maxBy(jobZeroWorkers(_).size)
@@ -105,6 +108,7 @@ class Hungarian(cost: DenseMatrix[Double]) {
       costX(::, 0 until numJobs filterNot(jobUnmarked(_))) :+= minUnmarked
       State(costX)  // Reset all marks.
     }
+
   }
 
   // STEP 3. Starting from an unmarked, transformed cost matrix...
