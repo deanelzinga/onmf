@@ -2,6 +2,8 @@ import breeze.linalg._
 import breeze.numerics._
 import scala.collection.mutable
 import org.roaringbitmap.RoaringBitmap
+import com.deanelzinga.kuhnmunkres._
+import scala.collection.immutable
 
 
 val cost = DenseMatrix.rand[Double](4, 4)
@@ -32,7 +34,7 @@ var cost2r = cost2.t.toDenseMatrix
 min(cost2r(::, *))
 cost2r = cost2r(*, ::) - min(cost2r(::, *)).t
 
-cost2r = cost2r(::, *) -  min(cost2r(*, ::))
+cost2r = cost2r(::, *) - min(cost2r(*, ::))
 argmin(cost2r)
 mutable.BitSet((0 until 10) : _*)
 RoaringBitmap.bitmapOf((0 until 10) : _*)
@@ -40,11 +42,33 @@ RoaringBitmap.bitmapOf((0 until 10) : _*)
 val vec25 = DenseVector.range(0, 25)
 val indices = mutable.BitSet.empty ++ (0 until 10)
 
-vec25.mapPairs((k,v) => (if (indices(k)) v else None))
+vec25.mapPairs((k,v) => if (indices(k)) v else None)
 var a = 2
 var b = 3
 var(c, d) = (3, 2)
 
-1 to 3 flatMap(i => 5 to 8 map(j => (i, j)))
+(1 to 3).flatMap(i => 5 to 8 map(j => (i, j)))
 
-(1 to 10 toSeq) -- (1 to 3 toSet)
+Matrix.ones[Double](3,3)
+val m0 = DenseMatrix(1 to 16 map(_.toDouble)).reshape(4,4).t
+val m1 = m0 *:* m0
+val m = DenseMatrix((1.0, 2.0, 3.0),(4.0, 5.0, 6.0), (7.0, 8.0, 9.0))
+//val hs = "----\n" + h.state.toString + "----"
+val m0112 = DenseMatrix((0.0, 1.0), (1.0, 2.0))
+val mScratch = m1.copy
+Hungarian.reduceCols(mScratch)
+println(mScratch)
+Hungarian.reduceRows(mScratch)
+println(mScratch)
+val h = new Hungarian(m1)
+h.state.toString
+h.state.reduceByMinUnmarked()
+h.state.toString
+println(h.state.toString)
+h.state.markAllZeros()
+h.state.reduceByMinUnmarked()
+val d1to16 = DenseVector((1 to 16).map(_.toDouble).toArray)
+
+val bits: BitVector = DenseVector((1 to 16).map(_.toDouble).toArray) <:< 8.0
+
+d1to16(bits)

@@ -1,9 +1,12 @@
-name := "kuhn-munkres"
-
+Global / onChangedBuildSource := ReloadOnSourceChanges
+name := "kuhnmunkres"
 version := "0.1"
-
-scalaVersion := "2.12.7"
+scalaVersion := "2.13.1"
+libraryDependencies += "org.scalactic" %% "scalactic" % "3.0.8"
 libraryDependencies += "org.scalatest" %% "scalatest" % "3.0.8" % "test"
+// resolvers += "Artima Maven Repository" at "https://repo.artima.com/releases"
+//logBuffered in Test := false
+
 libraryDependencies  ++= Seq(
   // Last stable release
   "org.scalanlp" %% "breeze" % "1.0",
@@ -20,3 +23,6 @@ libraryDependencies  ++= Seq(
 )
 libraryDependencies += "org.roaringbitmap" % "RoaringBitmap" % "0.8.11"
 
+// Logging, from https://github.com/lightbend/scala-logging
+libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.9.2"
+libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.3"
