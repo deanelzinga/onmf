@@ -236,8 +236,7 @@ package com.deanelzinga.kuhnmunkres {
     object State {
 
     }
-
-
+    
     def solve(): Unit = {
       while (!state.solved) {
         state.reduceByMinUnmarked()
@@ -289,18 +288,6 @@ package com.deanelzinga.kuhnmunkres {
         else
           new IntHeapIndirectPriorityQueue(jobIndices, numJobs, jobComparator)
 
-      def workerQHas1: Boolean = {
-        !workerQ.isEmpty && workerZeroJobsUnassigned(workerQ.first()).size == 1
-      }
-      def workerQFirst2Plus: Boolean = {
-        !workerQ.isEmpty && workerZeroJobsUnassigned(workerQ.first()).size >= 2
-      }
-      def jobQHas1: Boolean = {
-        !jobQ.isEmpty && jobZeroWorkersUnassigned(jobQ.first()).size == 1
-      }
-      def jobQFirst2Plus: Boolean = {
-        !jobQ.isEmpty && jobZeroWorkersUnassigned(jobQ.first()).size >= 2
-      }
       def workerQFirstPriority: Int = {
         if (workerQ.isEmpty)
           Integer.MAX_VALUE
@@ -346,89 +333,6 @@ package com.deanelzinga.kuhnmunkres {
             for (otherJob <- otherJobsWithWorker) {
               jobZeroWorkersUnassigned(otherJob) -= worker
               jobQ.changed(otherJob)
-            }
-          }
-        }
-      }
-
-      // Fixme: Remove after verifying transplanting this logic to assign()
-      private[kuhnmunkres] def assign2(): Unit = {
-        while (workerQFirst2Plus || jobQFirst2Plus) {
-          if (workerQFirst2Plus) {
-            val thisWorker = workerQ.dequeue()
-            // workerAssigned += thisWorker
-            val jobAvailable = workerZeroJobsUnassigned(thisWorker) &~ jobMarked
-            val job = jobAvailable.firstKey
-            // jobAssigned += job
-            workerAssignment.put(thisWorker, job)
-            jobAssignment.put(job, thisWorker)
-            workerMarked -= thisWorker
-            val workerWithJob = workerMarked & jobZeroWorkersUnassigned(job)
-            for (otherWorker <- workerWithJob) {
-              workerZeroJobsUnassigned(otherWorker) -= job
-              workerQ.changed(otherWorker)
-            }
-          }
-          if (jobQFirst2Plus) {
-            val thisJob = jobQ.dequeue()
-            // jobAssigned += thisJob
-            val workerAvailable = jobZeroWorkersUnassigned(thisJob) &~ workerMarked
-            val worker = workerAvailable.firstKey
-            // workerAssigned += worker
-            jobAssignment.put(thisJob, worker)
-            workerAssignment.put(worker, thisJob)
-            jobMarked -= thisJob
-            val jobWithWorker = jobMarked & workerZeroJobsUnassigned(worker)
-            for (otherJob <- jobWithWorker) {
-              jobZeroWorkersUnassigned(otherJob) -= worker
-              jobQ.changed(otherJob)
-            }
-          }
-        }
-      }
-
-      // FIXME: Remove after verifying logic covered by assign()
-      private[kuhnmunkres] def assign1(): Unit = {
-        while (workerQHas1 || jobQHas1) {
-          if (workerQHas1) {
-            val thisWorker = workerQ.dequeue()
-            // workerAssigned += thisWorker
-            val job = workerZeroJobsUnassigned(thisWorker).firstKey
-            // jobAssigned += job
-            workerAssignment.put(thisWorker, job)
-            jobAssignment.put(job, thisWorker)
-            workerMarked -= thisWorker
-            val workersWithJob = workerMarked & jobZeroWorkersUnassigned(job)
-            for (workerWithJob <- workersWithJob) {
-              workerZeroJobsUnassigned(workerWithJob) -= job
-              workerQ.changed(workerWithJob)
-            }
-
-            // This case seems impossible:
-            if (jobMarked.contains(job)) {
-              numUnexpectedStates += 1
-              jobZeroWorkersUnassigned(job) -= thisWorker
-              jobQ.changed(job)
-            }
-          }
-          if (jobQHas1) {
-            val jobA = jobQ.dequeue()
-            // jobAssigned += jobA
-            val worker = jobZeroWorkersUnassigned(jobA).firstKey
-            // workerAssigned += worker
-            workerAssignment.put(worker, jobA)
-            jobAssignment.put(jobA, worker)
-            jobMarked -= jobA
-            val jobsWithWorker = jobMarked & workerZeroJobsUnassigned(worker)
-            for (jobB <- jobsWithWorker) {
-              jobZeroWorkersUnassigned(jobB) -= worker
-              jobQ.changed(jobB)
-            }
-            // This case seems impossible:
-            if (workerMarked.contains(worker)) {
-              numUnexpectedStates += 1
-              workerZeroJobsUnassigned(worker) -= jobA
-              workerQ.changed(worker)
             }
           }
         }
