@@ -26,3 +26,4 @@ libraryDependencies += "org.roaringbitmap" % "RoaringBitmap" % "0.8.11"
 // Logging, from https://github.com/lightbend/scala-logging
 libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.9.2"
 libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.3"
+libraryDependencies += "it.unimi.dsi" % "fastutil" % "8.3.0"
