@@ -34,24 +34,25 @@ package com.deanelzinga.kuhnmunkres {
    * - Over all unmarked workers, find the max count per worker of unmarked, 0-cost cells (jobs).
    * - Over all unmarked jobs, find the max count per job of unmarked, 0-cost cells (workers).
    * If either of the max counts is 0, then they both are. We are done marking. Go to step 4.
-   * Otherwise both max counts are greater than 0.
+   * Otherwise both max counts are greater than 0:
    * If either of the max counts (per worker or per job) is strictly greater than the other, choose that axis.
-   * Mark the first worker or job with that greater max count. Go on to the next mark (3A).
+   * Mark the first worker or job with that greater max count. Remove the worker or job from unmarked jobs' or workers'
+   * list of 0 cells. Go on to the next mark (3A).
    * Otherwise the max counts are equal. For workers and jobs, count the number of each having ANY
    * unmarked 0 cells.
    * - If either workers or jobs has a strictly smaller count, then that axis is the shorter route to completion.
-   * Choose the axis with the smaller count.
-   * Otherwise the counts are equal. In this case, choose the shorter axis (workers). Mark the first worker having
-   * the maximum available unmarked 0 cells.
-   * - If a worker has is greater, choose it. If they are equal, prefer the worker.
-   * - Mark that worker or job (remove it from unmarked workers or jobs).
-   * - Remove that worker or job from all jobs' or workers' sets of 0-cost workers or jobs.
-   * *
+   * Choose the axis with the smaller count. Mark the first line of cells on that axis having the max count of
+   * unmarked 0s. Remove the marked worker or job from unmarked jobs' or workers' list of 0 cells. Go on to the next mark (3A).
+   * - Otherwise the counts are equal. In this case, choose the shorter axis (workers). Mark the first worker having
+   * the maximum available unmarked 0 cells. Remove the marked worker or job from unmarked jobs' or workers' list of 0 cells.
+   * Go on to the next mark (3A).
+   *
    * STEP 4. TEST FOR OPTIMALITY: (i) If the minimum of 0-covering marks is N,
    * the number of workers, then an optimal assignment of 0s is possible and "we are
    * finished"-- Go to Step 6.
+   * Otherwise the minimum of 0-covering marks is less than N. Go to STEP 5.
    * *
-   * STEP 5. Find the minimum cost entry still unmarked.
+   * STEP 5. RELAXATION: Find the minimum cost entry still unmarked.
    *- Subtract this entry from each unmarked worker.
    *- Add this entry to each MARKED job. Return to STEP 3.
    * *
