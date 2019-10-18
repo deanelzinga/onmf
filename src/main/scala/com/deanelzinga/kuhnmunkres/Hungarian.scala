@@ -14,41 +14,51 @@ package com.deanelzinga.kuhnmunkres {
    * transposing this for Breeze, since columns are dominant. Requires reorienting
    * workBoard and the order, (::, *) vs (::, *), of indexing matrix operations.
    * *
-   * Copy cost matrix to mutable, markable cost slate:
-   *- Transpose cost matrix as needed: shorter axis indexes worker; longer axis, jobs.
+   * Copy cost matrix to mutable, markable cost matrix:
+   *- Transpose cost matrix as needed: call shorter axis, worker; longer axis, jobs.
    *- Prepare sets of unmarked workers and jobs, so we can mark columns or rows containing 0.
    *- We subtract each worker's minimum job-cost from all the job costs for that worker.
    *- We subtract each job's minimum worker cost from all the worker costs for that job.
-   * STEP 1. For each worker, SUBTRACT the min job cost from all the job costs for that worker.
+   * STEP 1. REDUCE EACH WORKER: For each worker, SUBTRACT the min job cost from all the job costs for that worker.
    * For each worker, subtract their min job cost from all their job costs:
-   * STEP 2. For each job, SUBTRACT the min worker cost from all the worker costs for that job.
+   * STEP 2. REDUCE EACH JOB: For each job, SUBTRACT the min worker cost from all the worker costs for that job.
    * (Note, for jobs with a worker cost set to 0 in Step 1, subtracting 0 obviously has no effect.)
    * For each job, subtract its min worker costs from all their worker costs:
    * *
-   * STEP 3. Starting from an unmarked, transformed cost matrix...
-   *- Mark all the 0s of the transformed cost matrix with a minimum number of marks on
+   * STEP 3. MARK ALL ZEROS: Starting from an unmarked, transformed cost matrix,
+   * mark all the 0s of the transformed cost matrix with the minimum number of marks on
    * workers or jobs (rows or columns).
-   * Find and make next mark, if any:
-   * At each step, we use a greedy algorithm:
-   *- Find the max count of unmarked, 0-cost jobs for any unmarked worker.
-   *- Find the maximum number of unmarked, 0-cost workers for any unmarked job.
-   *- If there are no more unmarked, 0-cost jobs, go to STEP 4.
-   *- If either is greater, choose it. If they are equal, prefer the worker.
-   *- Mark that worker or job (remove it from unmarked workers or jobs).
-   *- Remove that worker or job from all jobs' or workers' sets of 0-cost workers or jobs.
-   * *
+   *
+   * While any 0 cells remain unmarked:
+   * 3A: Find and mark the next mark:
+   * - Over all unmarked workers, find the max count per worker of unmarked, 0-cost cells (jobs).
+   * - Over all unmarked jobs, find the max count per job of unmarked, 0-cost cells (workers).
+   * If either of the max counts is 0, then they both are. We are done marking. Go to step 4.
+   * Otherwise both max counts are greater than 0:
+   * If either of the max counts (per worker or per job) is strictly greater than the other, choose that axis.
+   * Mark the first worker or job with that greater max count. Remove the worker or job from unmarked jobs' or workers'
+   * list of 0 cells. Go on to the next mark (3A).
+   * Otherwise the max counts are equal. For workers and jobs, count the number of each having ANY
+   * unmarked 0 cells.
+   * - If either workers or jobs has a strictly smaller count, then that axis is the shorter route to completion.
+   * Choose the axis with the smaller count. Mark the first line of cells on that axis having the max count of
+   * unmarked 0s. Remove the marked worker or job from unmarked jobs' or workers' list of 0 cells. Go on to the next mark (3A).
+   * - Otherwise the counts are equal. In this case, choose the shorter axis (workers). Mark the first worker having
+   * the maximum available unmarked 0 cells. Remove the marked worker or job from unmarked jobs' or workers' list of 0 cells.
+   * Go on to the next mark (3A).
+   *
    * STEP 4. TEST FOR OPTIMALITY: (i) If the minimum of 0-covering marks is N,
    * the number of workers, then an optimal assignment of 0s is possible and "we are
    * finished"-- Go to Step 6.
+   * Otherwise the minimum of 0-covering marks is less than N. Go to STEP 5.
    * *
-   * STEP 5. Find the minimum cost entry still unmarked.
+   * STEP 5. RELAXATION: Find the minimum cost entry still unmarked.
    *- Subtract this entry from each unmarked worker.
    *- Add this entry to each MARKED job. Return to STEP 3.
    * *
    * STEP 6: Read off an available assignment from the covered 0s (not completely trivial).
    */
   class Hungarian(cost: DenseMatrix[Double]) {
-
     // Originally the algorithm was stated with rows fewer than columns. This matters for some of the order
     // of operations during the algorithm. For Breeze, which is column oriented, it probably makes more sense
     // for columns to be longer than rows. In anticipation of this change, the shorter axis is called workers
@@ -61,32 +71,30 @@ package com.deanelzinga.kuhnmunkres {
         cost.t.toDenseMatrix
     }
 
-
     protected var costX: DenseMatrix[Double] = costT.copy
-    {
+    {  // Reduce rows
       val jobMinWorkerCost = min(costX(*, ::))
       costX(::, *) :-= jobMinWorkerCost
     }
 
-    {
+    {  Reduce columns
       val workerMinJobCost = min(costX(::, *)).t
       costX(*, ::) :-= workerMinJobCost
     }
-
 
     def numWorkers: Int = costX.rows
     def numJobs: Int = costX.cols
     private def newWorkerUnmarked() = mutable.BitSet(0 until numWorkers: _*)
     private def newJobUnmarked() = mutable.BitSet(0 until numJobs: _*)
 
-    private def newWorkerZeroJobs(): DenseVector[mutable.BitSet] = costX(*, ::).
+    private def newWorkerZeroJobs(): DenseVector[mutable.BitSet] =  { costX(*, ::).
       map(c => where(c :== 0.0)).
       map(mutable.BitSet(_: _*))
-
-    private def newJobZeroWorkers(): DenseVector[mutable.BitSet] = costX(::, *).
+    }
+    private def newJobZeroWorkers(): DenseVector[mutable.BitSet] = { costX(::, *).
       map(c => where(c :== 0.0)).t.
       map(mutable.BitSet(_: _*))
-
+    }
     case class Mark(worker: Boolean, index: Int)
 
     /**
