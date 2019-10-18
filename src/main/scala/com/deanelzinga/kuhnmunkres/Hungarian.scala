@@ -77,7 +77,7 @@ package com.deanelzinga.kuhnmunkres {
       costX(::, *) :-= jobMinWorkerCost
     }
 
-    {  Reduce columns
+    {  // Reduce columns
       val workerMinJobCost = min(costX(::, *)).t
       costX(*, ::) :-= workerMinJobCost
     }
