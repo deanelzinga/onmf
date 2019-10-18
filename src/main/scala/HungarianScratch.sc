@@ -5,7 +5,11 @@ import org.roaringbitmap.RoaringBitmap
 import com.deanelzinga.kuhnmunkres._
 import scala.collection.immutable
 
-
+val mtri0 = DenseMatrix((0.0, 0.0, 1.0, 1.0, 1.0),
+  (0.0, 0.0, 0.0, 1.0, 1.0),
+  (1.0, 0.0, 0.0, 0.0, 1.0),
+  (1.0, 1.0, 0.0, 0.0, 0.0),
+  (1.0, 1.0, 1.0, 0.0, 0.0))
 val cost = DenseMatrix.rand[Double](4, 4)
 val working = cost.copy
 

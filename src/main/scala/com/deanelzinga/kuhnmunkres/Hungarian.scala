@@ -3,7 +3,7 @@ package com.deanelzinga.kuhnmunkres {
   import breeze.linalg._
   import com.deanelzinga.kuhnmunkres.Hungarian._
   import it.unimi.dsi.fastutil.ints.{IntComparator, IntComparators, IntHeapIndirectPriorityQueue, IntHeapSemiIndirectPriorityQueue}
-
+  import org.roaringbitmap.RoaringBitmap
   import scala.collection.{immutable, mutable}
   import java.util.Comparator
 
@@ -48,18 +48,35 @@ package com.deanelzinga.kuhnmunkres {
    * STEP 6: Read off an available assignment from the covered 0s (not completely trivial).
    */
   class Hungarian(cost: DenseMatrix[Double]) {
-    protected var costT: DenseMatrix[Double] = transposeIfAny(cost)
+
+    // Originally the algorithm was stated with rows fewer than columns. This matters for some of the order
+    // of operations during the algorithm. For Breeze, which is column oriented, it probably makes more sense
+    // for columns to be longer than rows. In anticipation of this change, the shorter axis is called workers
+    // and the longer axis is called jobs, to separate the algorithmic decisionmaking from the implementation
+    // details.
+    protected var costT: DenseMatrix[Double] = {
+      if (cost.rows <= cost.cols)
+        cost.toDenseMatrix
+      else
+        cost.t.toDenseMatrix
+    }
+
+
     protected var costX: DenseMatrix[Double] = costT.copy
+    {
+      val jobMinWorkerCost = min(costX(*, ::))
+      costX(::, *) :-= jobMinWorkerCost
+    }
+
+    {
+      val workerMinJobCost = min(costX(::, *)).t
+      costX(*, ::) :-= workerMinJobCost
+    }
+
 
     def numWorkers: Int = costX.rows
-
     def numJobs: Int = costX.cols
-
-    reduceRows(costX)
-    reduceCols(costX)
-
     private def newWorkerUnmarked() = mutable.BitSet(0 until numWorkers: _*)
-
     private def newJobUnmarked() = mutable.BitSet(0 until numJobs: _*)
 
     private def newWorkerZeroJobs(): DenseVector[mutable.BitSet] = costX(*, ::).
@@ -231,12 +248,21 @@ package com.deanelzinga.kuhnmunkres {
         }
         else {}
       }
+
+      // FIXME: Refactor Hungarian.solve() to be Hungarian.state.solve()
+      def solve(): Unit = {
+        while(!solved) {
+          reduceByMinUnmarked()
+          reset()
+          markAllZeros()
+        }
+      }
     }
 
     object State {
 
     }
-    
+
     def solve(): Unit = {
       while (!state.solved) {
         state.reduceByMinUnmarked()
@@ -251,7 +277,7 @@ package com.deanelzinga.kuhnmunkres {
     private[kuhnmunkres] class Assignment(state: State) {
 
       /**
-       * \
+       *
        *
        * @param axisZerosUnassigned
        */
@@ -262,7 +288,7 @@ package com.deanelzinga.kuhnmunkres {
         }
       }
 
-      protected var numUnexpectedStates: Long = 0L
+      // protected var numUnexpectedStates: Long = 0L
       val workerZeroJobsUnassigned: DenseVector[mutable.BitSet] = newWorkerZeroJobs()
       val jobZeroWorkersUnassigned: DenseVector[mutable.BitSet] = newJobZeroWorkers()
       val workerComparator: IntComparator = new AxisComparator(workerZeroJobsUnassigned)
@@ -304,6 +330,29 @@ package com.deanelzinga.kuhnmunkres {
         !workerQ.isEmpty || !jobQ.isEmpty
       }
 
+      /**
+       * Read off the minimum-cost solution (or one of such solutions).
+       * Proceed one by one assigning marked workers and jobs to the first available single-marked 0 in their row or
+       * column.
+       * Priority order:
+       * - For each marked worker or job, keep track of how many single-marked 0s in that row or column.
+       * - Exclude any 0s double-marked by a crossing mark on any other column or row.
+       * - Prioritize by count of single-marked 0s remaining for any worker or job, lowest count first.
+       * - When workers and jobs tie for lowest count, choose a worker with that lowest count.
+       * - As you assign a worker or job, remove it from any remaining sets of single-marked 0s for other workers or jobs.
+       * - To remove the assigned worker or job, use the previously stored location of those zeros; no need to search
+       * entire rows or columns.
+       *
+       * We use 2 indexed priority queues to store and prioritize the marked workers and jobs:
+       * In particular, it.unimi.dsi.fastutil.ints.IntHeapIndirectPriorityQueue
+       * "Indirect" priority queues give us operations beyond a normal heap:
+       * - An index to access each item on the queue directly (not only the first item)
+       * - IPQ.changed(index) method, to make the queue re-level any changed item in the heap.
+       *
+       * For their comparator, the priority queues use a worker's or job's count of remaining single-marked 0s.
+       * As we complete each assignment, we remove the assigned worker or job from any others' bit-sets of single-marked
+       * 0s, and call the change() method for its queue.
+       */
       private[kuhnmunkres] def assign(): Unit = {
         while (anyQNonEmpty) {
           if (workerQFirstPriority <= jobQFirstPriority) {
@@ -344,7 +393,7 @@ package com.deanelzinga.kuhnmunkres {
         if (state.solved) {
           new Assignment(state)
         } else {
-          solve()
+          state.solve()
           new Assignment(state)
         }
       }
@@ -365,33 +414,46 @@ package com.deanelzinga.kuhnmunkres {
         cost.t.toDenseMatrix
     }
 
-    def reduceRows(costX: DenseMatrix[Double]): Unit = {
-      val jobMinWorkerCost = min(costX(*, ::))
-      costX(::, *) :-= jobMinWorkerCost
-    }
-
-    def reduceCols(costX: DenseMatrix[Double]): Unit = {
-      val workerMinJobCost = min(costX(::, *)).t
-      costX(*, ::) :-= workerMinJobCost
-    }
-
     /**
      *
      */
     def main(args: Array[String]): Unit = {
-      val m4by4 = DenseMatrix((1 to 16).map(_.toDouble).toArray).reshape(4, 4).t
-      val m4by4sqr = m4by4 *:* m4by4
-      var mExpand = m4by4sqr.copy
-      mExpand = DenseMatrix.horzcat(mExpand(0 until mExpand.rows, 0 to 0), mExpand)
-      mExpand = DenseMatrix.vertcat(mExpand((0 to 0), (0 until mExpand.cols)), mExpand)
-      //      mExpand = mExpand(Seq(0) ++ (0 until mExpand.rows), (0 until mExpand.cols)).toDenseMatrix
-      //      mExpand = mExpand((0 until mExpand.rows), Seq(0) ++ (0 until mExpand.cols)).toDenseMatrix
-      val h = Hungarian(cost = mExpand)
-      println(h.state.toString)
-      h.solve()
-      val A = h.assignment()
-      A.assign()
-      println(A)
+//      val m4by4 = DenseMatrix((1 to 16).map(_.toDouble).toArray).reshape(4, 4).t
+//      val m4by4sqr = m4by4 *:* m4by4
+//      var mExpand = m4by4sqr.copy
+//      mExpand = DenseMatrix.horzcat(mExpand(0 until mExpand.rows, 0 to 0), mExpand)
+//      mExpand = DenseMatrix.vertcat(mExpand((0 to 0), (0 until mExpand.cols)), mExpand)
+//      //      mExpand = mExpand(Seq(0) ++ (0 until mExpand.rows), (0 until mExpand.cols)).toDenseMatrix
+//      //      mExpand = mExpand((0 until mExpand.rows), Seq(0) ++ (0 until mExpand.cols)).toDenseMatrix
+//      val h = Hungarian(cost = mExpand)
+//      println(h.state.toString)
+//      h.solve()
+//      val A = h.assignment()
+//      A.assign()
+//      println(A)
+//      val mtri0 = DenseMatrix((0.0, 0.0, 1.0, 1.0, 1.0),
+//        (0.0, 0.0, 0.0, 1.0, 1.0),
+//        (1.0, 0.0, 0.0, 0.0, 1.0),
+//        (1.0, 1.0, 0.0, 0.0, 0.0),
+//        (1.0, 1.0, 1.0, 0.0, 0.0))
+//      val h2 = Hungarian(cost = mtri0)
+//      println(h2.state.toString)
+//      h2.solve()
+//      val a2 = h2.assignment()
+//      a2.assign()
+      val mtri0tall = DenseMatrix((0.0, 0.0, 1.0, 1.0, 1.0),
+        (0.0, 0.0, 0.0, 1.0, 1.0),
+        (1.0, 0.0, 0.0, 0.0, 1.0),
+        (1.0, 1.0, 0.0, 0.0, 0.0),
+        (1.0, 1.0, 1.0, 0.0, 0.0),
+        (1.0, 1.0, 1.0, 0.0, 0.0),
+      )
+      val h3 = Hungarian(cost = mtri0tall)
+      println(h3.state.toString)
+      h3.state.solve()
+      val a3 = h3.assignment()
+      a3.assign()
+
     }
   }
 }

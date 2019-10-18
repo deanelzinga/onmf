@@ -22,6 +22,7 @@ libraryDependencies  ++= Seq(
   "org.scalanlp" %% "breeze-viz" % "1.0"
 )
 libraryDependencies += "org.roaringbitmap" % "RoaringBitmap" % "0.8.11"
+libraryDependencies += "org.openjdk.jol" % "jol-core" % "0.9"
 
 // Logging, from https://github.com/lightbend/scala-logging
 libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.9.2"
