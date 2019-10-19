@@ -65,12 +65,12 @@ println(mScratch)
 Hungarian.reduceRows(mScratch)
 println(mScratch)
 val h = new Hungarian(m1)
-h.state.toString
-h.state.reduceByMinUnmarked()
-h.state.toString
-println(h.state.toString)
-h.state.markAllZeros()
-h.state.reduceByMinUnmarked()
+h.zeroMarking.toString
+h.zeroMarking.relaxByMinUnmarked()
+h.zeroMarking.toString
+println(h.zeroMarking.toString)
+h.zeroMarking.minMarkZeros()
+h.zeroMarking.relaxByMinUnmarked()
 val d1to16 = DenseVector((1 to 16).map(_.toDouble).toArray)
 
 val bits: BitVector = DenseVector((1 to 16).map(_.toDouble).toArray) <:< 8.0

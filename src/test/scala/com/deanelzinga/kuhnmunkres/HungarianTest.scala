@@ -10,7 +10,7 @@ class HungarianTest extends FunSuite {
   test("State(DenseMatrix.ones[Double](1,1)).toString should be \"       0\n  0    1\n\"") {
 
     assert(new Hungarian(DenseMatrix.ones[Double](1, 1)).
-      State(DenseMatrix.ones[Double](1, 1)).toString ==
+      ZeroMarking(DenseMatrix.ones[Double](1, 1)).toString ==
       "       0\n  0    1\n")
   }
 

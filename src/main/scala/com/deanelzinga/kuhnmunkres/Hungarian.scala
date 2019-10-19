@@ -72,16 +72,17 @@ package com.deanelzinga.kuhnmunkres {
     }
 
     protected var costX: DenseMatrix[Double] = costT.copy
+    def reduceRows(): Unit =
     {  // Reduce rows
       val jobMinWorkerCost = min(costX(*, ::))
       costX(::, *) :-= jobMinWorkerCost
     }
-
-    {  // Reduce columns
+    reduceRows()
+    def reduceCols(): Unit = {  // Reduce columns
       val workerMinJobCost = min(costX(::, *)).t
       costX(*, ::) :-= workerMinJobCost
     }
-
+    reduceCols()
     def numWorkers: Int = costX.rows
     def numJobs: Int = costX.cols
     private def newWorkerUnmarked() = mutable.BitSet(0 until numWorkers: _*)
@@ -99,18 +100,18 @@ package com.deanelzinga.kuhnmunkres {
 
     /**
      *
-     * @param costX transformned cost matrix, with workers the shortest axis
+     * @param costX transformed cost matrix, with workers the shortest axis
      * @param workerUnmarked
      * @param jobUnmarked
      * @param workerZeroJobs
      * @param jobZeroWorkers
      */
-    case class State(costX: DenseMatrix[Double] = costX,
-                     // Default parameter values cover initialization
-                     var workerUnmarked: mutable.BitSet = newWorkerUnmarked(),
-                     var jobUnmarked: mutable.BitSet = newJobUnmarked(),
-                     var workerZeroJobs: DenseVector[mutable.BitSet] = newWorkerZeroJobs(),
-                     var jobZeroWorkers: DenseVector[mutable.BitSet] = newJobZeroWorkers()) {
+    case class ZeroMarking(costX: DenseMatrix[Double] = costX,
+                           // Default parameter values cover initialization
+                           var workerUnmarked: mutable.BitSet = newWorkerUnmarked(),
+                           var jobUnmarked: mutable.BitSet = newJobUnmarked(),
+                           var workerZeroJobs: DenseVector[mutable.BitSet] = newWorkerZeroJobs(),
+                           var jobZeroWorkers: DenseVector[mutable.BitSet] = newJobZeroWorkers()) {
 
       /**
        * Resets the state after a reduction step:
@@ -118,7 +119,7 @@ package com.deanelzinga.kuhnmunkres {
        * - Recomputes sets of zero indices at every index; for every row,
        * the set of zero columns; for every column, the set of zero rows.
        */
-      def reset(): Unit = {
+      def resetMarks(): Unit = {
         workerUnmarked = newWorkerUnmarked()
         jobUnmarked = newJobUnmarked()
         workerZeroJobs = newWorkerZeroJobs()
@@ -231,11 +232,11 @@ package com.deanelzinga.kuhnmunkres {
         }
       }
 
-      def markAllZeros(): Unit = {
+      def minMarkZeros(): Unit = {
         var markMaybe = nextMarkOption
         while (markMaybe.nonEmpty) {
-          state.markZeroIfAny(markMaybe)
-          markMaybe = state.nextMarkOption
+          zeroMarking.markZeroIfAny(markMaybe)
+          markMaybe = zeroMarking.nextMarkOption
         }
       }
 
@@ -244,7 +245,7 @@ package com.deanelzinga.kuhnmunkres {
         numWorkers == (numWorkers - workerUnmarked.size) + (numJobs - jobUnmarked.size)
       }
 
-      def reduceByMinUnmarked(): Unit = {
+      def relaxByMinUnmarked(): Unit = {
         if (workerUnmarked.nonEmpty && jobUnmarked.nonEmpty) {
           val minUnmarked = min(costX(workerUnmarked.toSeq, jobUnmarked.toSeq))
 
@@ -254,172 +255,153 @@ package com.deanelzinga.kuhnmunkres {
           // Add min unmarked cost to every MARKED column:
           costX(::, (0 until numJobs).filterNot(jobUnmarked(_))) :+= minUnmarked
         }
-        else {}
+        else ()
       }
 
       // FIXME: Refactor Hungarian.solve() to be Hungarian.state.solve()
-      def solve(): Unit = {
-        while(!solved) {
-          reduceByMinUnmarked()
-          reset()
-          markAllZeros()
-        }
-      }
-    }
-
-    object State {
-
-    }
-
-    def solve(): Unit = {
-      while (!state.solved) {
-        state.reduceByMinUnmarked()
-        state.reset() // Reset all marks.
-        state.markAllZeros()
-      }
-    }
-
-    var state: State = State()
-    state.markAllZeros()
-
-    private[kuhnmunkres] class Assignment(state: State) {
-
-      /**
-       *
-       *
-       * @param axisZerosUnassigned
-       */
-      class AxisComparator(axisZerosUnassigned: DenseVector[mutable.BitSet]) extends IntComparator {
-        @Override
-        def compare(a: Int, b: Int): Int = {
-          Integer.compare(axisZerosUnassigned(a).size, axisZerosUnassigned(b).size)
+      def relaxUntilSolved(): Unit = {
+        minMarkZeros()
+        while (!solved) {
+          relaxByMinUnmarked()
+          resetMarks()
+          minMarkZeros()
         }
       }
 
-      // protected var numUnexpectedStates: Long = 0L
-      val workerZeroJobsUnassigned: DenseVector[mutable.BitSet] = newWorkerZeroJobs()
-      val jobZeroWorkersUnassigned: DenseVector[mutable.BitSet] = newJobZeroWorkers()
-      val workerComparator: IntComparator = new AxisComparator(workerZeroJobsUnassigned)
-      val jobComparator: IntComparator = new AxisComparator(jobZeroWorkersUnassigned)
-      val workerIndices: Array[Int] = (0 until numWorkers).toArray
-      val jobIndices: Array[Int] = (0 until numJobs).toArray
-      val workerMarked: mutable.BitSet = mutable.BitSet((0 until numWorkers): _*) &~ state.workerUnmarked
-      val jobMarked: mutable.BitSet = mutable.BitSet((0 until numJobs): _*) &~ state.jobUnmarked
-      // val workerAssigned: mutable.BitSet = new mutable.BitSet(initSize = numWorkers)  // Consider removing
-      // val jobAssigned: mutable.BitSet = new mutable.BitSet(initSize = numJobs) // Consider removing
-      val workerAssignment: mutable.Map[Int, Int] =
-        new mutable.HashMap[Int, Int](numWorkers, mutable.HashMap.defaultLoadFactor)
-      val jobAssignment: mutable.Map[Int, Int] =
-        new mutable.HashMap[Int, Int](numWorkers, mutable.HashMap.defaultLoadFactor) // short axis length
-      val workerQ: IntHeapIndirectPriorityQueue =
-        if (workerMarked.nonEmpty)
-          new IntHeapIndirectPriorityQueue(workerIndices, workerMarked.toArray, numWorkers, workerComparator)
-        else
-          new IntHeapIndirectPriorityQueue(workerIndices, numWorkers, workerComparator)
-      val jobQ: IntHeapIndirectPriorityQueue =
-        if (jobMarked.nonEmpty)
-          new IntHeapIndirectPriorityQueue(jobIndices, jobMarked.toArray, numJobs, jobComparator)
-        else
-          new IntHeapIndirectPriorityQueue(jobIndices, numJobs, jobComparator)
+      private[kuhnmunkres] class SolutionChooser() {
 
-      def workerQFirstPriority: Int = {
-        if (workerQ.isEmpty)
-          Integer.MAX_VALUE
-        else
-          workerZeroJobsUnassigned(workerQ.first()).size
-      }
-      def jobQFirstPriority: Int = {
-        if (jobQ.isEmpty)
-          Integer.MAX_VALUE
-        else
-          jobZeroWorkersUnassigned(jobQ.first()).size
-      }
-      def anyQNonEmpty: Boolean = {
-        !workerQ.isEmpty || !jobQ.isEmpty
-      }
+        // protected var numUnexpectedStates: Long = 0L
+        val workerZeroJobsUnassigned: DenseVector[mutable.BitSet] = newWorkerZeroJobs()
+        val jobZeroWorkersUnassigned: DenseVector[mutable.BitSet] = newJobZeroWorkers()
+        val workerComparator: IntComparator = new SolutionChooser.AxisComparator(workerZeroJobsUnassigned)
+        val jobComparator: IntComparator = new SolutionChooser.AxisComparator(jobZeroWorkersUnassigned)
+        val workerIndices: Array[Int] = (0 until numWorkers).toArray
+        val jobIndices: Array[Int] = (0 until numJobs).toArray
+        val workerMarked: mutable.BitSet = mutable.BitSet((0 until numWorkers): _*) &~ workerUnmarked
+        val jobMarked: mutable.BitSet = mutable.BitSet((0 until numJobs): _*) &~ jobUnmarked
+        val workerAssignment: mutable.Map[Int, Int] =
+          new mutable.HashMap[Int, Int](numWorkers, mutable.HashMap.defaultLoadFactor)
+//        val jobAssignment: mutable.Map[Int, Int] =  // FIXME: Consider removing redundant map.
+//          new mutable.HashMap[Int, Int](numWorkers, mutable.HashMap.defaultLoadFactor) // short axis length
+        val workerQ: IntHeapIndirectPriorityQueue =
+          if (workerMarked.nonEmpty)
+            new IntHeapIndirectPriorityQueue(workerIndices, workerMarked.toArray, numWorkers, workerComparator)
+          else
+            new IntHeapIndirectPriorityQueue(workerIndices, numWorkers, workerComparator)
+        val jobQ: IntHeapIndirectPriorityQueue =
+          if (jobMarked.nonEmpty)
+            new IntHeapIndirectPriorityQueue(jobIndices, jobMarked.toArray, numJobs, jobComparator)
+          else
+            new IntHeapIndirectPriorityQueue(jobIndices, numJobs, jobComparator)
 
-      /**
-       * Read off the minimum-cost solution (or one of such solutions).
-       * Proceed one by one assigning marked workers and jobs to the first available single-marked 0 in their row or
-       * column.
-       * Priority order:
-       * - For each marked worker or job, keep track of how many single-marked 0s in that row or column.
-       * - Exclude any 0s double-marked by a crossing mark on any other column or row.
-       * - Prioritize by count of single-marked 0s remaining for any worker or job, lowest count first.
-       * - When workers and jobs tie for lowest count, choose a worker with that lowest count.
-       * - As you assign a worker or job, remove it from any remaining sets of single-marked 0s for other workers or jobs.
-       * - To remove the assigned worker or job, use the previously stored location of those zeros; no need to search
-       * entire rows or columns.
-       *
-       * We use 2 indexed priority queues to store and prioritize the marked workers and jobs:
-       * In particular, it.unimi.dsi.fastutil.ints.IntHeapIndirectPriorityQueue
-       * "Indirect" priority queues give us operations beyond a normal heap:
-       * - An index to access each item on the queue directly (not only the first item)
-       * - IPQ.changed(index) method, to make the queue re-level any changed item in the heap.
-       *
-       * For their comparator, the priority queues use a worker's or job's count of remaining single-marked 0s.
-       * As we complete each assignment, we remove the assigned worker or job from any others' bit-sets of single-marked
-       * 0s, and call the change() method for its queue.
-       */
-      private[kuhnmunkres] def assign(): Unit = {
-        while (anyQNonEmpty) {
-          if (workerQFirstPriority <= jobQFirstPriority) {
-            val thisWorker = workerQ.dequeue()
-            // workerAssigned += thisWorker
-            val jobAvailable = workerZeroJobsUnassigned(thisWorker) &~ jobMarked
-            val job = jobAvailable.firstKey
-            // jobAssigned += job
-            workerAssignment.put(thisWorker, job)
-            jobAssignment.put(job, thisWorker)
-            workerMarked -= thisWorker
-            val otherWorkersWithJob = workerMarked & jobZeroWorkersUnassigned(job)
-            for (otherWorker <- otherWorkersWithJob) {
-              workerZeroJobsUnassigned(otherWorker) -= job
-              workerQ.changed(otherWorker)
-            }
-          } else {
-            val thisJob = jobQ.dequeue()
-            // jobAssigned += thisJob
-            val workerAvailable = jobZeroWorkersUnassigned(thisJob) &~ workerMarked
-            val worker = workerAvailable.firstKey
-            // workerAssigned += worker
-            jobAssignment.put(thisJob, worker)
-            workerAssignment.put(worker, thisJob)
-            jobMarked -= thisJob
-            val otherJobsWithWorker = jobMarked & workerZeroJobsUnassigned(worker)
-            for (otherJob <- otherJobsWithWorker) {
-              jobZeroWorkersUnassigned(otherJob) -= worker
-              jobQ.changed(otherJob)
+        def workerQFirstPriority: Int = {
+          if (workerQ.isEmpty)
+            Integer.MAX_VALUE
+          else
+            workerZeroJobsUnassigned(workerQ.first()).size
+        }
+
+        def jobQFirstPriority: Int = {
+          if (jobQ.isEmpty)
+            Integer.MAX_VALUE
+          else
+            jobZeroWorkersUnassigned(jobQ.first()).size
+        }
+
+        /**
+         * Read off the minimum-cost solution (or one of such solutions).
+         * Proceed one by one assigning marked workers and jobs to the first available single-marked 0 in their row or
+         * column.
+         * Priority order:
+         * - For each marked worker or job, keep track of how many single-marked 0s in that row or column.
+         * - Exclude any 0s double-marked by a crossing mark on any other column or row.
+         * - Prioritize by count of single-marked 0s remaining for any worker or job, lowest count first.
+         * - When workers and jobs tie for lowest count, choose a worker with that lowest count.
+         * - As you assign a worker or job, remove it from any remaining sets of single-marked 0s for other workers or jobs.
+         * - To remove the assigned worker or job, use the previously stored location of those zeros; no need to search
+         * entire rows or columns.
+         *
+         * We use 2 indexed priority queues to store and prioritize the marked workers and jobs:
+         * In particular, it.unimi.dsi.fastutil.ints.IntHeapIndirectPriorityQueue
+         * "Indirect" priority queues give us operations beyond a normal heap:
+         * - An index to access each item on the queue directly (not only the first item)
+         * - IPQ.changed(index) method, to make the queue re-level any changed item in the heap.
+         *
+         * For their comparator, the priority queues use a worker's or job's count of remaining single-marked 0s.
+         * As we complete each assignment, we remove the assigned worker or job from any others' bit-sets of single-marked
+         * 0s, and call the change() method for its queue.
+         */
+        private[kuhnmunkres] def chooseSolution(): Seq[Int] = {
+          while (!workerQ.isEmpty || !jobQ.isEmpty) {
+            if (workerQFirstPriority <= jobQFirstPriority) {
+              val thisWorker = workerQ.dequeue()
+              // workerAssigned += thisWorker
+              val jobAvailable = workerZeroJobsUnassigned(thisWorker) &~ jobMarked
+              val job = jobAvailable.firstKey
+              // jobAssigned += job
+              workerAssignment.put(thisWorker, job)
+              // jobAssignment.put(job, thisWorker)
+              workerMarked -= thisWorker
+              val otherWorkersWithJob = workerMarked & jobZeroWorkersUnassigned(job)
+              for (otherWorker <- otherWorkersWithJob) {
+                workerZeroJobsUnassigned(otherWorker) -= job
+                workerQ.changed(otherWorker)
+              }
+            } else {
+              val thisJob = jobQ.dequeue()
+              // jobAssigned += thisJob
+              val workerAvailable = jobZeroWorkersUnassigned(thisJob) &~ workerMarked
+              val worker = workerAvailable.firstKey
+              // workerAssigned += worker
+              // jobAssignment.put(thisJob, worker)
+              workerAssignment.put(worker, thisJob)
+              jobMarked -= thisJob
+              val otherJobsWithWorker = jobMarked & workerZeroJobsUnassigned(worker)
+              for (otherJob <- otherJobsWithWorker) {
+                jobZeroWorkersUnassigned(otherJob) -= worker
+                jobQ.changed(otherJob)
+              }
             }
           }
+          (0 until numWorkers).map(worker => workerAssignment(worker))
         }
       }
-    }
 
-    private[kuhnmunkres] object Assignment {
-      def apply(): Assignment = {
-        if (state.solved) {
-          new Assignment(state)
-        } else {
-          state.solve()
-          new Assignment(state)
+      private[kuhnmunkres] object SolutionChooser {
+        def apply(): SolutionChooser = {
+          if (zeroMarking.solved) {
+            new SolutionChooser()
+          } else {
+            zeroMarking.relaxUntilSolved()
+            new SolutionChooser()
+          }
         }
+
+        private[kuhnmunkres] class AxisComparator(axisZerosUnassigned: DenseVector[mutable.BitSet]) extends IntComparator {
+          @Override
+          def compare(a: Int, b: Int): Int = {
+            Integer.compare(axisZerosUnassigned(a).size, axisZerosUnassigned(b).size)
+          }
+        }
+
       }
+      def solutionChooser(): SolutionChooser = SolutionChooser()
+
+    }
+    private[kuhnmunkres] object ZeroMarking {
+
     }
 
-    def assignment(): Assignment = Assignment()
+    val zeroMarking: ZeroMarking = ZeroMarking()
+
+    def solve(): Unit = zeroMarking.relaxUntilSolved()
+
+    override def toString: String = zeroMarking.toString
   }
 
   object Hungarian {
     def apply(cost: DenseMatrix[Double]): Hungarian = {
       new Hungarian(cost)
-    }
-
-    def transposeIfAny(cost: DenseMatrix[Double]): DenseMatrix[Double] = {
-      if (cost.rows <= cost.cols)
-        cost.toDenseMatrix
-      else
-        cost.t.toDenseMatrix
     }
 
     /**
@@ -457,10 +439,8 @@ package com.deanelzinga.kuhnmunkres {
         (1.0, 1.0, 1.0, 0.0, 0.0),
       )
       val h3 = Hungarian(cost = mtri0tall)
-      println(h3.state.toString)
-      h3.state.solve()
-      val a3 = h3.assignment()
-      a3.assign()
+      println(h3.zeroMarking.toString)
+      h3.zeroMarking.relaxUntilSolved()
 
     }
   }
