@@ -2,7 +2,7 @@ import breeze.linalg._
 import breeze.numerics._
 import scala.collection.mutable
 import org.roaringbitmap.RoaringBitmap
-import com.deanelzinga.gopa._
+import com.deanelzinga.onmf._
 import scala.collection.immutable
 
 val mtri0 = DenseMatrix((0.0, 0.0, 1.0, 1.0, 1.0),

@@ -1,7 +1,7 @@
-package com.deanelzinga.gopa
+package com.deanelzinga.onmf
 
 import breeze.linalg._
-  import com.deanelzinga.gopa.HungarianT._
+  import com.deanelzinga.onmf.HungarianT._
   import it.unimi.dsi.fastutil.ints.{IntComparator, IntComparators, IntHeapIndirectPriorityQueue, IntHeapSemiIndirectPriorityQueue}
   import org.roaringbitmap.RoaringBitmap
   import scala.collection.{immutable, mutable}
@@ -268,7 +268,7 @@ class HungarianT(cost: DenseMatrix[Double]) {
       }
     }
 
-    private[gopa] class SolutionChooser() {
+    private[onmf] class SolutionChooser() {
       val workerZeroJobsUnassigned: DenseVector[mutable.BitSet] = newWorkerZeroJobs()
       val jobZeroWorkersUnassigned: DenseVector[mutable.BitSet] = newJobZeroWorkers()
       val workerComparator: IntComparator = new SolutionChooser.AxisComparator(workerZeroJobsUnassigned)
@@ -327,7 +327,7 @@ class HungarianT(cost: DenseMatrix[Double]) {
        * As we complete each assignment, we remove the assigned worker or job from any others' bit-sets of single-marked
        * 0s, and call the change() method for its queue.
        */
-      private[gopa] def chooseSolution(): Seq[Int] = {
+      private[onmf] def chooseSolution(): Seq[Int] = {
         while (!workerQ.isEmpty || !jobQ.isEmpty) {
           if (workerQFirstPriority <= jobQFirstPriority) {
             val thisWorker = workerQ.dequeue()
@@ -357,7 +357,7 @@ class HungarianT(cost: DenseMatrix[Double]) {
       }
     }
 
-    private[gopa] object SolutionChooser {
+    private[onmf] object SolutionChooser {
       def apply(): SolutionChooser = {
         if (zeroMarking.solved) {
           new SolutionChooser()
@@ -367,7 +367,7 @@ class HungarianT(cost: DenseMatrix[Double]) {
         }
       }
 
-      private[gopa] class AxisComparator(axisZerosUnassigned: DenseVector[mutable.BitSet]) extends IntComparator {
+      private[onmf] class AxisComparator(axisZerosUnassigned: DenseVector[mutable.BitSet]) extends IntComparator {
         @Override
         def compare(a: Int, b: Int): Int = {
           Integer.compare(axisZerosUnassigned(a).size, axisZerosUnassigned(b).size)
@@ -378,7 +378,7 @@ class HungarianT(cost: DenseMatrix[Double]) {
     def solutionChooser(): SolutionChooser = SolutionChooser()
 
   }
-  private[gopa] object ZeroMarking {
+  private[onmf] object ZeroMarking {
 
   }
 

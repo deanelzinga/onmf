@@ -1,6 +1,6 @@
-package com.deanelzinga.gopa
+package com.deanelzinga.onmf
 
-import breeze.linalg.DenseMatrix
+import breeze.linalg._
 import org.scalatest.FunSuite
 //
 // import kuhnmunkres.HungarianT
