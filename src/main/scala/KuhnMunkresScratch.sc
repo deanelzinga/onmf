@@ -2,7 +2,7 @@ import breeze.linalg._
 import breeze.numerics._
 import scala.collection.mutable
 import org.roaringbitmap.RoaringBitmap
-import com.deanelzinga.kuhnmunkres._
+import com.deanelzinga.gopa._
 import scala.collection.immutable
 
 val mtri0 = DenseMatrix((0.0, 0.0, 1.0, 1.0, 1.0),
@@ -60,11 +60,11 @@ val m = DenseMatrix((1.0, 2.0, 3.0),(4.0, 5.0, 6.0), (7.0, 8.0, 9.0))
 //val hs = "----\n" + h.state.toString + "----"
 val m0112 = DenseMatrix((0.0, 1.0), (1.0, 2.0))
 val mScratch = m1.copy
-Hungarian.reduceCols(mScratch)
+HungarianT.reduceCols(mScratch)
 println(mScratch)
-Hungarian.reduceRows(mScratch)
+HungarianT.reduceRows(mScratch)
 println(mScratch)
-val h = new Hungarian(m1)
+val h = new HungarianT(m1)
 h.zeroMarking.toString
 h.zeroMarking.relaxByMinUnmarked()
 h.zeroMarking.toString

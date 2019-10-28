@@ -1,4 +1,4 @@
-package com.deanelzinga.kuhnmunkres
+package com.deanelzinga.gopa
 class HungarianRoaring {
 
 }

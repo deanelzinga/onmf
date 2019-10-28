@@ -1,7 +1,7 @@
-package com.deanelzinga.kuhnmunkres {
+package com.deanelzinga.gopa {
 
   import breeze.linalg._
-  import com.deanelzinga.kuhnmunkres.Hungarian._
+  import com.deanelzinga.gopa.HungarianT._
   import it.unimi.dsi.fastutil.ints.{IntComparator, IntComparators, IntHeapIndirectPriorityQueue, IntHeapSemiIndirectPriorityQueue}
   import org.roaringbitmap.RoaringBitmap
   import scala.collection.{immutable, mutable}
@@ -58,7 +58,7 @@ package com.deanelzinga.kuhnmunkres {
    * *
    * STEP 6: Read off an available assignment from the covered 0s (not completely trivial).
    */
-  class Hungarian(cost: DenseMatrix[Double]) {
+  class KuhnMunkres(cost: DenseMatrix[Double]) {
     // Originally the algorithm was stated with rows fewer than columns. This matters for some of the order
     // of operations during the algorithm. For Breeze, which is column oriented, it probably makes more sense
     // for columns to be longer than rows. In anticipation of this change, the shorter axis is called workers
@@ -258,7 +258,7 @@ package com.deanelzinga.kuhnmunkres {
         else ()
       }
 
-      // FIXME: Refactor Hungarian.solve() to be Hungarian.state.solve()
+      // FIXME: Refactor HungarianT.solve() to be HungarianT.state.solve()
       def relaxUntilSolved(): Unit = {
         minMarkZeros()
         while (!solved) {
@@ -268,9 +268,7 @@ package com.deanelzinga.kuhnmunkres {
         }
       }
 
-      private[kuhnmunkres] class SolutionChooser() {
-
-        // protected var numUnexpectedStates: Long = 0L
+      private[gopa] class SolutionChooser() {
         val workerZeroJobsUnassigned: DenseVector[mutable.BitSet] = newWorkerZeroJobs()
         val jobZeroWorkersUnassigned: DenseVector[mutable.BitSet] = newJobZeroWorkers()
         val workerComparator: IntComparator = new SolutionChooser.AxisComparator(workerZeroJobsUnassigned)
@@ -281,8 +279,6 @@ package com.deanelzinga.kuhnmunkres {
         val jobMarked: mutable.BitSet = mutable.BitSet((0 until numJobs): _*) &~ jobUnmarked
         val workerAssignment: mutable.Map[Int, Int] =
           new mutable.HashMap[Int, Int](numWorkers, mutable.HashMap.defaultLoadFactor)
-//        val jobAssignment: mutable.Map[Int, Int] =  // FIXME: Consider removing redundant map.
-//          new mutable.HashMap[Int, Int](numWorkers, mutable.HashMap.defaultLoadFactor) // short axis length
         val workerQ: IntHeapIndirectPriorityQueue =
           if (workerMarked.nonEmpty)
             new IntHeapIndirectPriorityQueue(workerIndices, workerMarked.toArray, numWorkers, workerComparator)
@@ -331,16 +327,13 @@ package com.deanelzinga.kuhnmunkres {
          * As we complete each assignment, we remove the assigned worker or job from any others' bit-sets of single-marked
          * 0s, and call the change() method for its queue.
          */
-        private[kuhnmunkres] def chooseSolution(): Seq[Int] = {
+        private[gopa] def chooseSolution(): Seq[Int] = {
           while (!workerQ.isEmpty || !jobQ.isEmpty) {
             if (workerQFirstPriority <= jobQFirstPriority) {
               val thisWorker = workerQ.dequeue()
-              // workerAssigned += thisWorker
               val jobAvailable = workerZeroJobsUnassigned(thisWorker) &~ jobMarked
               val job = jobAvailable.firstKey
-              // jobAssigned += job
               workerAssignment.put(thisWorker, job)
-              // jobAssignment.put(job, thisWorker)
               workerMarked -= thisWorker
               val otherWorkersWithJob = workerMarked & jobZeroWorkersUnassigned(job)
               for (otherWorker <- otherWorkersWithJob) {
@@ -349,11 +342,8 @@ package com.deanelzinga.kuhnmunkres {
               }
             } else {
               val thisJob = jobQ.dequeue()
-              // jobAssigned += thisJob
               val workerAvailable = jobZeroWorkersUnassigned(thisJob) &~ workerMarked
               val worker = workerAvailable.firstKey
-              // workerAssigned += worker
-              // jobAssignment.put(thisJob, worker)
               workerAssignment.put(worker, thisJob)
               jobMarked -= thisJob
               val otherJobsWithWorker = jobMarked & workerZeroJobsUnassigned(worker)
@@ -367,7 +357,7 @@ package com.deanelzinga.kuhnmunkres {
         }
       }
 
-      private[kuhnmunkres] object SolutionChooser {
+      private[gopa] object SolutionChooser {
         def apply(): SolutionChooser = {
           if (zeroMarking.solved) {
             new SolutionChooser()
@@ -377,7 +367,7 @@ package com.deanelzinga.kuhnmunkres {
           }
         }
 
-        private[kuhnmunkres] class AxisComparator(axisZerosUnassigned: DenseVector[mutable.BitSet]) extends IntComparator {
+        private[gopa] class AxisComparator(axisZerosUnassigned: DenseVector[mutable.BitSet]) extends IntComparator {
           @Override
           def compare(a: Int, b: Int): Int = {
             Integer.compare(axisZerosUnassigned(a).size, axisZerosUnassigned(b).size)
@@ -388,7 +378,7 @@ package com.deanelzinga.kuhnmunkres {
       def solutionChooser(): SolutionChooser = SolutionChooser()
 
     }
-    private[kuhnmunkres] object ZeroMarking {
+    private[gopa] object ZeroMarking {
 
     }
 
@@ -399,9 +389,9 @@ package com.deanelzinga.kuhnmunkres {
     override def toString: String = zeroMarking.toString
   }
 
-  object Hungarian {
-    def apply(cost: DenseMatrix[Double]): Hungarian = {
-      new Hungarian(cost)
+  object KuhnMunkres {
+    def apply(cost: DenseMatrix[Double]): HungarianT = {
+      new HungarianT(cost)
     }
 
     /**
@@ -415,7 +405,7 @@ package com.deanelzinga.kuhnmunkres {
 //      mExpand = DenseMatrix.vertcat(mExpand((0 to 0), (0 until mExpand.cols)), mExpand)
 //      //      mExpand = mExpand(Seq(0) ++ (0 until mExpand.rows), (0 until mExpand.cols)).toDenseMatrix
 //      //      mExpand = mExpand((0 until mExpand.rows), Seq(0) ++ (0 until mExpand.cols)).toDenseMatrix
-//      val h = Hungarian(cost = mExpand)
+//      val h = HungarianT(cost = mExpand)
 //      println(h.state.toString)
 //      h.solve()
 //      val A = h.assignment()
@@ -426,7 +416,7 @@ package com.deanelzinga.kuhnmunkres {
 //        (1.0, 0.0, 0.0, 0.0, 1.0),
 //        (1.0, 1.0, 0.0, 0.0, 0.0),
 //        (1.0, 1.0, 1.0, 0.0, 0.0))
-//      val h2 = Hungarian(cost = mtri0)
+//      val h2 = HungarianT(cost = mtri0)
 //      println(h2.state.toString)
 //      h2.solve()
 //      val a2 = h2.assignment()
@@ -438,7 +428,7 @@ package com.deanelzinga.kuhnmunkres {
         (1.0, 1.0, 1.0, 0.0, 0.0),
         (1.0, 1.0, 1.0, 0.0, 0.0),
       )
-      val h3 = Hungarian(cost = mtri0tall)
+      val h3 = HungarianT(cost = mtri0tall)
       println(h3.zeroMarking.toString)
       h3.zeroMarking.relaxUntilSolved()
 
