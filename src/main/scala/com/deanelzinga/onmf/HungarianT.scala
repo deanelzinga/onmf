@@ -1,63 +1,26 @@
 package com.deanelzinga.onmf
 
 import breeze.linalg._
-  import com.deanelzinga.onmf.HungarianT._
-  import it.unimi.dsi.fastutil.ints.{IntComparator, IntComparators, IntHeapIndirectPriorityQueue, IntHeapSemiIndirectPriorityQueue}
-  import org.roaringbitmap.RoaringBitmap
-  import scala.collection.{immutable, mutable}
-  import java.util.Comparator
+import it.unimi.dsi.fastutil.ints.{IntComparator, IntHeapIndirectPriorityQueue}
 
-  import scala.collection.mutable.HashMap
+import scala.collection.mutable
 
 /**
- * Kuhn-Munkres typically stated with workers in rows and jobs in columns. Consider
- * transposing this for Breeze, since columns are dominant. Requires reorienting
- * workBoard and the order, (::, *) vs (::, *), of indexing matrix operations.
- * *
- * Copy cost matrix to mutable, markable cost matrix:
- *- Transpose cost matrix as needed: call shorter axis, worker; longer axis, jobs.
- *- Prepare sets of unmarked workers and jobs, so we can mark columns or rows containing 0.
- *- We subtract each worker's minimum job-cost from all the job costs for that worker.
- *- We subtract each job's minimum worker cost from all the worker costs for that job.
- * STEP 1. REDUCE EACH WORKER: For each worker, SUBTRACT the min job cost from all the job costs for that worker.
- * For each worker, subtract their min job cost from all their job costs:
- * STEP 2. REDUCE EACH JOB: For each job, SUBTRACT the min worker cost from all the worker costs for that job.
- * (Note, for jobs with a worker cost set to 0 in Step 1, subtracting 0 obviously has no effect.)
- * For each job, subtract its min worker costs from all their worker costs:
- * *
- * STEP 3. MARK ALL ZEROS: Starting from an unmarked, transformed cost matrix,
- * mark all the 0s of the transformed cost matrix with the minimum number of marks on
- * workers or jobs (rows or columns).
+ * Kuhn-Munkres typically stated with workers in rows and jobs in columns. This is transposed, because
+ * Breeze (and BLAS) operates on column-major matrices. In other words:
+ * - Columns are the primary objects in a Breeze (and BLAS) matrix;
+ * - Workers are the primary objects in Kuhn-Munkres;
+ * - It makes some sense, especially in cases where numWorkers << numJobs, for each worker to be a vector
+ * along the longer axis, the axis of jobs.
+ * Example: Cost matrix is 10 x 1000:
+ * - Each worker is represented along the short axis (10 workers).
+ * - Each worker has costs associated with each job (1000 jobs).
+ * - For a column-major system like Breeze (and BLAS), it makes sense to represent this as 1000 rows (jobs) by
+ * 10 column-vectors (workers).
  *
- * While any 0 cells remain unmarked:
- * 3A: Find and mark the next mark:
- * - Over all unmarked workers, find the max count per worker of unmarked, 0-cost cells (jobs).
- * - Over all unmarked jobs, find the max count per job of unmarked, 0-cost cells (workers).
- * If either of the max counts is 0, then they both are. We are done marking. Go to step 4.
- * Otherwise both max counts are greater than 0:
- * If either of the max counts (per worker or per job) is strictly greater than the other, choose that axis.
- * Mark the first worker or job with that greater max count. Remove the worker or job from unmarked jobs' or workers'
- * list of 0 cells. Go on to the next mark (3A).
- * Otherwise the max counts are equal. For workers and jobs, count the number of each having ANY
- * unmarked 0 cells.
- * - If either workers or jobs has a strictly smaller count, then that axis is the shorter route to completion.
- * Choose the axis with the smaller count. Mark the first line of cells on that axis having the max count of
- * unmarked 0s. Remove the marked worker or job from unmarked jobs' or workers' list of 0 cells. Go on to the next mark (3A).
- * - Otherwise the counts are equal. In this case, choose the shorter axis (workers). Mark the first worker having
- * the maximum available unmarked 0 cells. Remove the marked worker or job from unmarked jobs' or workers' list of 0 cells.
- * Go on to the next mark (3A).
- *
- * STEP 4. TEST FOR OPTIMALITY: (i) If the minimum of 0-covering marks is N,
- * the number of workers, then an optimal assignment of 0s is possible and "we are
- * finished"-- Go to Step 6.
- * Otherwise the minimum of 0-covering marks is less than N. Go to STEP 5.
- * *
- * STEP 5. RELAXATION: Find the minimum cost entry still unmarked.
- *- Subtract this entry from each unmarked worker.
- *- Add this entry to each MARKED job. Return to STEP 3.
- * *
- * STEP 6: Read off an available assignment from the covered 0s (not completely trivial).
+ * For all that, this is currently unused and not directly needed, built on speculation it might be needed for Gopa.
  */
+@deprecated
 class HungarianT(cost: DenseMatrix[Double]) {
   // Originally the algorithm was stated with rows fewer than columns. This matters for some of the order
   // of operations during the algorithm. For Breeze, which is column oriented, it probably makes more sense

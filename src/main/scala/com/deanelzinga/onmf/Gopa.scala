@@ -2,10 +2,10 @@ package com.deanelzinga.onmf {
 
   import breeze.linalg._
   import breeze.numerics._
+  import com.deanelzinga.onmf.Gopa._
   import it.unimi.dsi.util._
 
   import scala.util.Random
-  import Gopa._
 
   /**
    * Greedy Orthogonal Pivoting Algorithm for Non-Negative Matrix Factorization (GOPA-NMF).
@@ -15,86 +15,110 @@ package com.deanelzinga.onmf {
    * @param gnd (Matlab `gnd`) I think for "ground truth", since it's used to calculate Ac (accuracy?)
    * @param k (Matlab `k`) dimensions to reduce to.
    * @param numT (Matlab `T`) number of full iterations.
-   * @param ratio (Matlab `ratio`)
+   * @param ratio (Matlab `ratio`) ratio of whether to update or leave unchanged each row of each iteration.
    */
   class Gopa(x: DenseMatrix[Double], gnd: DenseVector[Int], k: Int, numT: Int, ratio: Double) {
+    // Initialize: TODO: Consider moving to method init()
     val n: Int = x.rows
     var w0: DenseMatrix[Double] = randOrtho(x.rows, k)
-    // var ac: DenseVector[Double] = DenseVector.zeros[Double](numT) // FIXME
+
+    // Optimization, main loop. TODO: Consider moving to method fit() or optimize()
+    // var ac: DenseVector[Double] = DenseVector.zeros[Double](numT) // FIXME: Reverse engineer ac, res use case.
     var count = 1
     for (t <- 0 until numT) {
       println("t: " + t)
 
       // Cluster label: column index of the nonzero element (the max, since the rest are 0): (argmax(w0, Axis._1))
-      val res: DenseVector[Int] = argmax(w0, Axis._1)  // Cluster assignments [~,res] = max(W0');
-      // ac(t) = Gopa.accuracy(gnd, res)  // FIXME
+      // val res: DenseVector[Int] = argmax(w0, Axis._1)  // Cluster assignments [~,res] = max(W0'); // FIXME: res, ac
+      // ac(t) = Gopa.accuracy(gnd, res)  // FIXME: figure out what ORNF
       val h0: DenseMatrix[Double] = w0.t * x       // Update matrix H by H=W′X;
       count = count + 1
       val r: DenseMatrix[Double] = x * h0.t        // R = X*H0';
-      normalizeCol(w0)  // Rescale W columns p and q to norm 1; W0 = W0*diag(1./sqrt(1e-10+sum(W0.*W0)));
       val u: Seq[Int] = randPerm(n)
       for (j <- 0 until n) {
         println("j: " + j)
         if (Gopa.rand() <= ratio) {
-          val v = gop1(w0, r, u(j))
-          w0 = v.w0
+          gop1(w0, r, u(j))  // FIXME: Change to mutate operation and Unit return value.
         }
       }
     }
 
+    /**
+     *
+     * @param w0
+     * @param p
+     * @param status
+     * @param obj objective change of swapping from column p to q (or leaving at p), rescaling to optimal value.
+     * @param objs
+     * @param x1s
+     */
     case class Gop1(w0: DenseMatrix[Double] = w0,
-                    e: Int = 0,        // e = q;..e = find(T == mini);..e = e(1);..if(e~=q);..
-                    status: Int = -1,  // %status  % -1: error; % 0: no potential; % 1: can reduce
-                    o: Double = 0.0,   // [o,Wpn,Wqn,x] = sml(W0,R,q,e,l0);..[o,Wqn,x] = sml_0(W0,R,q,l0);.. o = W0(l,q);
-                    t: DenseVector[Double] = DenseVector.zeros[Double](k),   // T = zeros(1,k);...T(i) = obj;
-                    p: DenseVector[Double] = DenseVector.zeros[Double](k))   // P = zeros(1,k);...P(i) = x;
+                    p: Int = 0, // e = q;..e = find(T == mini);..e = e(1);..if(e~=q);..
+                    status: Int = -1, // %status  % -1: error; % 0: no potential; % 1: can reduce
+                    obj: Double = 0.0, // [o,Wpn,Wqn,x] = sml(W0,R,q,e,l0);..[o,Wqn,x] = sml_0(W0,R,q,l0);.. o = W0(l,q);
+                    objs: DenseVector[Double] = DenseVector.zeros[Double](k), // T = zeros(1,k);...T(i) = obj;
+                    x1s: DenseVector[Double] = DenseVector.zeros[Double](k))   // P = zeros(1,k);...P(i) = x;
 
     case class Sml(dif: Double = 0.0,
                    wpn: DenseVector[Double] = DenseVector.zeros[Double](n),
                    wqn: DenseVector[Double] = DenseVector.zeros[Double](n),
-                   x: Double = .5)
+                   x1: Double = .5)
 
     case class Sml_0(dif: Double = 0.0,
                      wqn: DenseVector[Double] = DenseVector.zeros[Double](n),
-                     x: Double = .5)
+                     x1: Double = .5)
 
+    /**
+     *
+     * @param w0
+     * @param r
+     * @param l0
+     * @return
+     */
+      // FIXME: Change to Unit type and change w0 in place.
+      // FIXME: Handle renormalize here only for column p; and other column q, if any.
     def gop1(w0: DenseMatrix[Double], r: DenseMatrix[Double], l0: Int): Gop1 = {
       val k: Int = w0.cols
       val w: DenseVector[Double] = w0(l0, ::).t
       val qs: BitVector = (w >:> 0.0)
       if (qs.activeSize == 0) {
-        Gop1(w0, e = 0, status = -1, o = 0.0, t = randVector(k), p = DenseVector.zeros[Double](k))
+        () // Gop1(w0, p = 0, status = -1, obj = 0.0, objs = randVector(k), x1s = DenseVector.zeros[Double](k))
       } else {
-        val q = qs.activeKeysIterator.next()
-        val t = DenseVector.zeros[Double](k)
-        val p = DenseVector.zeros[Double](k)
+        val q = qs.activeKeysIterator.next()  // Get first integer in qs (indices of 1s), considered as a set
+        val objs = DenseVector.zeros[Double](k)  // Optimal objective improvement for each column i of [0, k-1]
+        val x1s = DenseVector.zeros[Double](k)  // Optimal value to change w0(l0,x1s) to when swapping to optimal location.
 
         // Swap the non-zero entry of W[i,:] from the original location (qth column) to each of the {1,2,...,k} locations;
-        for (i <- 0 until k) {  // For
-          //
+        // TODO: Save the optimal i and vectors wpn and wqn
+        for (p <- 0 until k) {  // For
+          // v is struct with full matrix, optimal column, status,
           val v =
-            if (i != q)
-              sml(w0, r, q, i, l0)
+            if (p != q)
+              sml(w0, r, q, p, l0)
             else
               sml_0(w0, r, q, l0)
-          t(i) = v.dif  // Store the objective change for each candidate column.
-          p(i) = v.x    // Store the optimal x for each candidate column.
+          objs(p) = v.dif  // Store the objective change for each candidate column.
+          x1s(p) = v.x1    // Store the optimal x for each candidate column.
         }
-        val dex = (t <:< 0.0) &:& (p >:> 0.0) // Indices where objective improves and optimal switch is positive
-        if (dex.activeSize == 0) {  // %print('total zero row, warning');
-          Gop1(w0 = w0, e = q, status = 0, o = 0.0, t, p)
+        val pPossible = (objs <:< 0.0) &:& (x1s >:> 0.0) // Indices where objective improves and optimal switch is positive
+        if (pPossible.activeSize == 0) {  // %print('total zero row, warning');
+          ()  // Gop1(w0 = w0, p = q, status = 0, obj = 0.0, objs, x1s)
         } else {
-          val mini = min(t(dex))              // Best objective improvement
-          val e = (t :== mini).activeKeysIterator.next()  // Index of best objective improvement
-          if (e != q ) {  // 2-column case: swap q to different column, e
-            val v = sml(w0, r, q, e, l0)
-            w0(::, e) := v.wpn
+          // TODO: Here we revisit the optimal index and recompute the vectors, when we could have saved them.
+          val minObj = min(objs(pPossible))              // Best objective improvement
+          val p = (objs :== minObj).activeKeysIterator.next()  // First index equalling best objective
+          if (p != q ) {  // 2-column case: swap q to different column, p
+            val v = sml(w0, r, q, p, l0)
+            w0(::, p) := v.wpn
             w0(::, q) := v.wqn
-            Gop1(w0, e , status = 1, o = v.dif, t, p)
+            normalizeCol(w0, p)
+            normalizeCol(w0, q)
+            // Gop1(w0, p , status = 1, obj = v.dif, objs, x1s)
           } else {
             val v: Sml = sml_0(w0, r, q, l0)
             w0(::, q) := v.wqn
-            Gop1(w0, e, status = 1, o = v.dif, t, p)
+            normalizeCol(w0, p)
+            // Gop1(w0, p, status = 1, obj = v.dif, objs, x1s)
           }
         }
       }
@@ -214,10 +238,16 @@ package com.deanelzinga.onmf {
       val randRow = random.shuffle((0 until rows).toVector)
 
       0 until rows foreach { index =>
+        val x = 1.0
+        // Gaussian(0.0, sqrt(cols/rows))  // TODO: Consider using this random value instead of 1 to make these
+          // Typically norm of vector of N Gaussian(0,1) is ~sqrt(N). With sigma=sqrt(cols/rows), this makes each
+          // column approx norm 1.0 even before normalization. Using Gaussian variates instead of 1.0 might give
+          // these some of the representation power of Random Projections, a separate technique following from
+          // Johnson-Lindenstrauss Lemma.
         if (index < cols) // Ensure every column has at least 1 non-zero value (1.0)
-          m(randRow(index), index) = 1.0 // Sequential instead of random for the first few rows. We will rearrange later.
+          m(randRow(index), index) = x
         else
-          m(randRow(index), random.nextInt(cols)) = 1.0
+          m(randRow(index), random.nextInt(cols)) = x
       }
 
       // Normalize columns:
